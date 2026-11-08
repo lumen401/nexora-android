@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nexora</title>
+<style>
+:root{--bg:#0e1621;--panel:#172332;--line:#29394d;--text:#e8eef6;--muted:#8fa3b8;--accent:#5fa8ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+header{padding:16px 16px 8px}
+h1{margin:0;font-size:22px}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+input{width:100%;margin-top:12px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:15px}
+#chips{display:flex;gap:8px;overflow-x:auto;padding:10px 16px}
+.chip{flex:none;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:13px}
+.chip.on{background:var(--accent);color:#06121f;border-color:var(--accent)}
+#list{padding:4px 16px 24px;display:grid;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.cover{height:160px;background:#101b29;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;letter-spacing:1px}
+.cover img{width:100%;height:100%;object-fit:cover}
+.body{padding:12px 14px 14px}
+.badge{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px}
+.title{font-size:17px;font-weight:700;margin:4px 0}
+.desc{color:var(--muted);font-size:13px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.meta{color:var(--muted);font-size:12px;margin-top:8px}
+button.btn{margin-top:12px;width:100%;padding:12px;border:0;border-radius:10px;background:var(--accent);color:#06121f;font-weight:700;font-size:15px}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+#detail{position:fixed;inset:0;background:var(--bg);overflow-y:auto;display:none;padding-top:env(safe-area-inset-top,0px)}
+#detail .body{padding:16px}
+#detail .full{white-space:pre-wrap;font-size:14px;line-height:1.5;margin-top:10px}
+.msg{color:var(--muted);text-align:center;padding:30px 16px;font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Nexora</h1>
+  <div class="sub">Community mods, tools and guides</div>
+  <input id="q" type="search" placeholder="Search mods…">
+</header>
+<div id="chips"></div>
+<div id="list"><div class="msg">Loading…</div></div>
+<div id="detail"></div>
+<script>
+const API = "https://ggfmtpaspxewmxwkddzr.supabase.co";
+const KEY = "sb_publishable_UPY4yHrLYLlyCxNGMJDV2A_aAw8MAUr";
+let mods = [], cat = "all";
+const $ = s => document.querySelector(s);
+
+async function rest(path) {
+  const r = await fetch(API + "/rest/v1/" + path, { headers: { apikey: KEY, Accept: "application/json" } });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+async function fn(action, payload) {
+  const r = await fetch(API + "/functions/v1/nytro-mod-review", {
+    method: "POST",
+    headers: { apikey: KEY, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(Object.assign({}, payload, { action }))
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+function openUrl(u) {
+  u = String(u || "");
+  if (!/^https:\/\//i.test(u)) return alert("This link is not a valid secure address.");
+  const B = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+  if (B) B.open({ url: u }); else window.open(u, "_blank", "noopener");
+}
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function sizeMB(m) { return m.file_size ? (Number(m.file_size) / 1048576).toFixed(1) + " MB" : ""; }
+async function coverUrl(m) {
+  if (m.cover_path) { try { const r = await fn("media_preview", { mod_id: m.id, kind: "cover" }); if (r.url) return r.url; } catch (e) {} }
+  return m.cover_url || "";
+}
+async function fillCover(box, m) {
+  const u = await coverUrl(m);
+  if (!/^https:\/\//i.test(u)) return;
+  const img = new Image();
+  img.onload = () => { box.textContent = ""; box.appendChild(img); };
+  img.src = u;
+}
+async function download(m) {
+  try {
+    if (m.external_url) return openUrl(m.external_url);
+    if (!m.storage_path) return alert(m.description || "Nothing to download.");
+    const r = await fn("download", { mod_id: m.id });
+    openUrl(r.url);
+  } catch (e) { alert("Download unavailable: " + e.message); }
+}
+async function video(m) {
+  try {
+    if (m.video_path) { const r = await fn("media_preview", { mod_id: m.id, kind: "video" }); return openUrl(r.url); }
+    openUrl(m.video_url);
+  } catch (e) { alert("Video unavailable: " + e.message); }
+}
+function showDetail(m) {
+  const d = $("#detail");
+  d.textContent = "";
+  const cover = el("div", "cover", "NEXORA • MOD PREVIEW");
+  const body = el("div", "body");
+  body.append(el("div", "badge", String(m.category || "Mod").toUpperCase()), el("div", "title", m.title || "Untitled post"),
+    el("div", "meta", [m.version, sizeMB(m)].filter(Boolean).join("  ·  ")), el("div", "full", m.description || "No description provided."));
+  const dl = el("button", "btn", "⬇  Download"); dl.onclick = () => download(m);
+  body.append(dl);
+  if (m.video_path || m.video_url) { const v = el("button", "btn ghost", "▶  Watch video"); v.onclick = () => video(m); body.append(v); }
+  const back = el("button", "btn ghost", "← Back"); back.onclick = () => { d.style.display = "none"; };
+  body.append(back);
+  d.append(cover, body);
+  d.style.display = "block"; d.scrollTop = 0;
+  fillCover(cover, m);
+}
+function render() {
+  const q = $("#q").value.trim().toLowerCase();
+  const list = $("#list"); list.textContent = "";
+  const shown = mods.filter(m =>
+    (cat === "all" || String(m.category || "").toLowerCase() === cat) &&
+    [m.title, m.description, m.category, m.version].join(" ").toLowerCase().includes(q));
+  if (!shown.length) return list.append(el("div", "msg", "No posts found."));
+  for (const m of shown) {
+    const card = el("div", "card");
+    const cover = el("div", "cover", "NEXORA • MOD PREVIEW");
+    const body = el("div", "body");
+    body.append(el("div", "badge", String(m.category || "Mod").toUpperCase()), el("div", "title", m.title || "Untitled post"),
+      el("div", "desc", m.description || ""), el("div", "meta", [m.version, sizeMB(m)].filter(Boolean).join("  ·  ")));
+    const b = el("button", "btn", "View mod  →"); b.onclick = () => showDetail(m);
+    body.append(b); card.append(cover, body); list.append(card);
+    if (m.cover_path || m.cover_url) fillCover(cover, m);
+  }
+}
+function chips() {
+  const box = $("#chips"); box.textContent = "";
+  const cats = ["all"].concat([...new Set(mods.map(m => String(m.category || "").toLowerCase()).filter(Boolean))]);
+  for (const c of cats) {
+    const b = el("button", "chip" + (c === cat ? " on" : ""), c === "all" ? "All" : c.charAt(0).toUpperCase() + c.slice(1));
+    b.onclick = () => { cat = c; chips(); render(); };
+    box.append(b);
+  }
+}
+$("#q").addEventListener("input", render);
+rest("nytro_mods?select=*&order=created_at.desc&limit=50")
+  .then(r => { mods = r; chips(); render(); })
+  .catch(e => { $("#list").textContent = ""; $("#list").append(el("div", "msg", "Could not load posts. Check your connection. (" + e.message + ")")); });
+</script>
+</body>
+</html>
