@@ -1,0 +1,8 @@
+{
+  "appId": "com.nexora.mods",
+  "appName": "Nexora",
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}
